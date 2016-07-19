@@ -4,19 +4,35 @@
 
 ----------------------- configure stuff here ----------------------------------
 
--- health
-local crit_enabled = true -- whether crit is included in the heal prediction
-local feast_of_souls_hot = true -- should the Feast of Souls Hot be shown?
-local feast_of_souls_prediction = true -- predict the healing of Feast of Souls
-local soul_carver_prediction = true -- predict the resulting healing of Soul Cleaver
-local soul_cleave_prediction = true -- predict soul cleave heals
+local features = {
+  -- health prediction
+  ["hp"] = {
+    ["Feast of Souls"] = true, -- predict the healing of Feast of Souls
+    ["Soul Carver"] = true, -- predict the resulting healing of Soul Cleaver
+    ["Soul Cleave"] = true -- predict soul cleave heals
+  },
 
--- power
-local immolation_aura_prediction = true -- predict pain gains from Immolation Aura
-local immolation_aura_gain = true -- forecast pain gains from Immolation Aura
-local metamorphosis_gain = true -- forecast pain gains from Metamorphosis
-local consume_magic_prediction = false -- predict pain gains from successfull Consume Magic interrupts
-local blade_turning_gain = true -- forecasts pain gains from Blade Turning
+  -- health gain
+  ["hg"] = {
+    ["Feast of Souls"] = true -- should the Feast of Souls Hot be shown?
+  },
+
+  -- power prediction
+  ["pp"] = {
+    ["Immolation Aura"] = true, -- predict pain gains from Immolation Aura
+    ["Consume Magic"] = false -- predict pain gains from successfull Consume Magic interrupts
+  },
+
+  -- power gain
+  ["pg"] = {
+    ["Immolation Aura"] = true, -- forecast pain gains from Immolation Aura
+    ["Metamorphosis"] = true, -- forecast pain gains from Metamorphosis
+    ["Blade Turning"] = true -- forecasts pain gains from Blade Turning
+
+  },
+  -- general features
+  ["crit"] = true, -- whether crit is included in the heal prediction
+}
 -------------------------------------------------------------------------------
 
 
@@ -39,6 +55,8 @@ local feast_of_souls_talented = false
 
 ----------------------- persisting stuff --------------------------------------
 -- spells
+-- first slot: availability
+-- second slot: continuation upon availability change
 local spellAvailability = {
   ["Soul Carver"] = {true, UpdateHealthPrediction}
   ["Immolation Aura"] = {true, UpdatePowerPrediction)
@@ -72,15 +90,15 @@ local p = "player"
 -------------------------------------------------------------------------------
 
 local handlers = {
-  ["SPELL_UPDATE_USABLE"] = UpdateSpellAvailability,
-  ["COMBAT_LOG_EVENT_UNFILTERED"] = UpdateSpellAvailability,
+  ["SPELL_UPDATE_USABLE"] = DispatchOnSpellAvailability,
+  ["COMBAT_LOG_EVENT_UNFILTERED"] = DispatchOnSpellAvailability,
   ["PLAYER_TALENT_UPDATE"] = UpdateTalents,
   ["SPELLS_CHANGED"] = UpdateArtifactTraits,
   ["PLAYER_ENTERING_WORLD"] = UpdateArtifactTraits,
-  ["UNIT_AURA"] = function() UpdateSoulCleaveAndSoulCarverPrediction(); UpdatePowerGain();
+  ["UNIT_AURA"] = function(...) UpdateHealthPrediction(...); UpdatePowerGain(...);
   ["UNIT_ABSORB_AMOUNT_CHANGED"] = UpdateAbsorbs,
-  ["UNIT_HEALTH_FREQUENT"] = function() UpdateHealth(); UpdateFeastOfSoulsHotAndPrediction() end
-  ["UNIT_POWER_FREQUENT"] = function() UpdatePower(); UpdateSoulCleaveAndSoulCarverPrediction(); UpdateFeastOfSoulsHotAndPrediction() end
+  ["UNIT_HEALTH_FREQUENT"] = UpdateHealth
+  ["UNIT_POWER_FREQUENT"] = function() UpdatePower(); UpdateHealthPrediction(); end
 }
 
 ----------------------- functions for calculating things ----------------------
