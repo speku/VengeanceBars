@@ -15,6 +15,10 @@ local soul_cleave_prediction = true -- predict soul cleave heals
 local immolation_aura_prediction = true -- predict pain gains from Immolation Aura
 local immolation_aura_gain = true -- forecast pain gains from Immolation Aura
 local metamorphosis_gain = true -- forecast pain gains from Metamorphosis
+local consume_magic_prediction = false -- predict pain gains from successfull Consume Magic interrupts
+local blade_turning_gain = true -- forecasts pain gains from Blade Turning
+-------------------------------------------------------------------------------
+
 
 ------------------------probably no change required here-----------------------
 local soul_cleave_formula = function(ap) return ap * 5 end -- formula for calculating the minimal heal of Soul Cleave
@@ -34,8 +38,15 @@ local feast_of_souls_talented = false
 
 
 ----------------------- persisting stuff --------------------------------------
-local soulCarverReady = true
+-- spells
+local spellAvailability = {
+  ["Soul Carver"] = {true, UpdateHealthPrediction}
+  ["Immolation Aura"] = {true, UpdatePowerPrediction)
+}
+
+-- bar values
 local health, healthMax = 0, 0
+local power, powerMax = 0, 0
 local absorbs = 0
 local soulCleavePrediction = 0
 local feastOfSoulsPrediction, feastOfSoulsHot = 0, 0
@@ -43,8 +54,22 @@ local soulCarverPrediciton = 0
 local painGainMetamorphosis = 0
 local painGainImmolationAura = 0
 local immolationAuraPrediction = 0
-
+local consumeMagicPrediction = 0
 --------------------------------------------------------------------------------
+
+
+------------------------ needfull things ---------------------------------------
+
+-- "localizing" globals for faster access
+local UnitPower, UnitPowerMax = UnitPower, UnitPowerMax
+local UnitHealth, UnitHealthMax = UnitHealth, UnitHealthMax
+local GetSpellCooldown, GetSpellDescription = GetSpellCooldown, GetSpellDescription
+local UnitAttackPower, GetCritChance = UnitAttackPower, GetCritChance
+local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
+
+-- shortcuts
+local p = "player"
+-------------------------------------------------------------------------------
 
 local handlers = {
   ["SPELL_UPDATE_USABLE"] = UpdateSpellAvailability,
@@ -52,10 +77,10 @@ local handlers = {
   ["PLAYER_TALENT_UPDATE"] = UpdateTalents,
   ["SPELLS_CHANGED"] = UpdateArtifactTraits,
   ["PLAYER_ENTERING_WORLD"] = UpdateArtifactTraits,
-  ["UNIT_AURA"] = UpdateSoulCleaveAndSoulCarverPrediction,
+  ["UNIT_AURA"] = function() UpdateSoulCleaveAndSoulCarverPrediction(); UpdatePowerGain();
   ["UNIT_ABSORB_AMOUNT_CHANGED"] = UpdateAbsorbs,
   ["UNIT_HEALTH_FREQUENT"] = function() UpdateHealth(); UpdateFeastOfSoulsHotAndPrediction() end
-  ["UNIT_POWER_FREQUENT"] = function() UpdatePower(); UpdatePowerGain(); UpdateSoulCleaveAndSoulCarverPrediction(); UpdateFeastOfSoulsHotAndPrediction() end
+  ["UNIT_POWER_FREQUENT"] = function() UpdatePower(); UpdateSoulCleaveAndSoulCarverPrediction(); UpdateFeastOfSoulsHotAndPrediction() end
 }
 
 ----------------------- functions for calculating things ----------------------
@@ -74,11 +99,19 @@ function aura_env.EventHandlerDispatchern(e,...)
   handlers[e](e,...)
 end
 
-local function UpdatePowerGain()
+local function UpdatePowerGain(spell)
 
 end
 
-local function UpdateSpellAvailability(...)
+local function UpdatePowerPrediction(spell, available)
+
+end
+
+local function UpdateHealthGain(spell)
+
+end
+
+local function UpdateHealthPrediction(spell, available)
 
 end
 
@@ -91,19 +124,34 @@ local function UpdateTalents()
 end
 
 local function UpdateAbsorbs()
-
+  absorbs = UnitGetTotalAbsorbs(p)
 end
 
 local function UpdatePower()
-
+  power = UnitPower(p)
+  powerMax = UnitPowerMax(p)
 end
 
 local function UpdateHealth()
-
+  health = UnitHealth(p)
+  healthMax = UnitHealthMax(p)
 end
 
 
-
+local function DispatchOnSpellAvailability(spell,e,...)
+  if e == "SPELL_UPDATE_USABLE" then
+    local s = GetSpellCooldown(spell)
+    if s and s == 0 and not spellAvailability[spell] then
+      spellAvailability[spell][1] = true
+      spellAvailability[spell][2](spell, true)
+    end
+  elseif e == "COMBAT_LOG_EVENT_UNFILTERED"
+    if select(2,...) == "SPELL_CAST_SUCCESS" and select(4,...) == UnitGUID(p) and select(13,...) == spell then
+      spellAvailability[spell][1] = false
+      spellAvailability[spell][2](spell, false)
+    end
+  end
+end
 
 -- returns true if passed COMBAT_LOG_EVENT_UNFILTERED or SPELL_UPDATE_USABLE info
 -- was related to Soul Carver. Returns false if such info woul be related to
