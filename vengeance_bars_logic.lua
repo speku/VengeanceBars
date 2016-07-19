@@ -3,10 +3,18 @@
 -- and Soul Barrier
 
 ----------------------- configure stuff here ----------------------------------
+
+-- health
 local crit_enabled = true -- whether crit is included in the heal prediction
 local feast_of_souls_hot = true -- should the Feast of Souls Hot be shown?
 local feast_of_souls_prediction = true -- predict the healing of Feast of Souls
 local soul_carver_prediction = true -- predict the resulting healing of Soul Cleaver
+local soul_cleave_prediction = true -- predict soul cleave heals
+
+-- power
+local immolation_aura_prediction = true -- predict pain gains from Immolation Aura
+local immolation_aura_gain = true -- forecast pain gains from Immolation Aura
+local metamorphosis_gain = true -- forecast pain gains from Metamorphosis
 
 ------------------------probably no change required here-----------------------
 local soul_cleave_formula = function(ap) return ap * 5 end -- formula for calculating the minimal heal of Soul Cleave
@@ -26,10 +34,29 @@ local feast_of_souls_talented = false
 
 
 ----------------------- persisting stuff --------------------------------------
-local SoulCarverReady = true
+local soulCarverReady = true
+local health, healthMax = 0, 0
+local absorbs = 0
+local soulCleavePrediction = 0
+local feastOfSoulsPrediction, feastOfSoulsHot = 0, 0
+local soulCarverPrediciton = 0
+local painGainMetamorphosis = 0
+local painGainImmolationAura = 0
+local immolationAuraPrediction = 0
 
 --------------------------------------------------------------------------------
 
+local handlers = {
+  ["SPELL_UPDATE_USABLE"] = UpdateSpellAvailability,
+  ["COMBAT_LOG_EVENT_UNFILTERED"] = UpdateSpellAvailability,
+  ["PLAYER_TALENT_UPDATE"] = UpdateTalents,
+  ["SPELLS_CHANGED"] = UpdateArtifactTraits,
+  ["PLAYER_ENTERING_WORLD"] = UpdateArtifactTraits,
+  ["UNIT_AURA"] = UpdateSoulCleaveAndSoulCarverPrediction,
+  ["UNIT_ABSORB_AMOUNT_CHANGED"] = UpdateAbsorbs,
+  ["UNIT_HEALTH_FREQUENT"] = function() UpdateHealth(); UpdateFeastOfSoulsHotAndPrediction() end
+  ["UNIT_POWER_FREQUENT"] = function() UpdatePower(); UpdatePowerGain(); UpdateSoulCleaveAndSoulCarverPrediction(); UpdateFeastOfSoulsHotAndPrediction() end
+}
 
 ----------------------- functions for calculating things ----------------------
 
@@ -43,24 +70,40 @@ local function GetCrit()
 end
 
 -- invokes the proper event handlers for the given event
-aura_env.EventHandlerDispatcher = function(e,...)
+function aura_env.EventHandlerDispatchern(e,...)
+  handlers[e](e,...)
+end
 
-  -- early return if no updates have to be made
-  if not HandleSoulCarverStatus(e,...) then return false
-
-  -- check for talent changes
-  if e == "PLAYER_TALENT_UPDATE" then
-
-  elseif e == "SPELLS_CHANGED" or e == "PLAYER_ENTERING_WORLD" then
-
-  else
-
-  end
+local function UpdatePowerGain()
 
 end
 
-local function HandleTalentUpdate()
+local function UpdateSpellAvailability(...)
+
 end
+
+local function UpdateArtifactTraits()
+
+end
+
+local function UpdateTalents()
+
+end
+
+local function UpdateAbsorbs()
+
+end
+
+local function UpdatePower()
+
+end
+
+local function UpdateHealth()
+
+end
+
+
+
 
 -- returns true if passed COMBAT_LOG_EVENT_UNFILTERED or SPELL_UPDATE_USABLE info
 -- was related to Soul Carver. Returns false if such info woul be related to
@@ -69,15 +112,15 @@ local function HandleSoulCarverStatus(e,...)
   -- check if Soul Carver related
   if e == "SPELL_UPDATE_USABLE" then
     local s = GetSpellCooldown("Soul Carver")
-    if s and s == 0 and not SoulCarverReady then
-      SoulCarverReady = true
+    if s and s == 0 and not soulCarverReady then
+      soulCarverReady = true
       return true
     else
       return false
     end
   elseif e == "COMBAT_LOG_EVENT_UNFILTERED"
     if select(2,...) == "SPELL_CAST_SUCCESS" and select(4,...) == UnitGUID("player") and select(13,...) == "Soul Carver" then
-      SoulCarverReady = false
+      soulCarverReady = false
       return true
     else
       return false
@@ -88,7 +131,7 @@ local function HandleSoulCarverStatus(e,...)
 end
 
 -- Feast of Souls Hot and prediction
-local function GetFeastOfSoulsHotAndPrediction(power)
+local function UpdateFeastOfSoulsHotAndPrediction(power)
 
   local hot,pre = 0,0
   if not feast_of_souls_talented then return hot, pre end
@@ -106,10 +149,11 @@ end
 
 
 -- Soul Cleave and Soul Carver prediction
-local function GetSoulCleaveAndSoulCarverPrediction(power)
+local function UpdateSoulCleaveAndSoulCarverPrediction()
+  local power = UnitPower("player")
 
   -- early return
-  if not power < soul_cleave_min_cost or not (soul_carver_prediction and soul_carver_unlocked and SoulCarverReady) then return 0,0 end
+  if not power < soul_cleave_min_cost or not (soul_carver_prediction and soul_carver_unlocked and soulCarverReady) then return 0,0 end
 
   local soulCleaveHeal = 0
 
@@ -127,7 +171,7 @@ local function GetSoulCleaveAndSoulCarverPrediction(power)
   end
 
   -- Soul Carver
-  local soulCarverHeal = soul_carver_unlocked and soul_carver_prediction and SoulCarverReady and soul_carver_soul_fragment_count * soulFragmentHeal * crit or 0
+  local soulCarverHeal = soul_carver_unlocked and soul_carver_prediction and soulCarverReady and soul_carver_soul_fragment_count * soulFragmentHeal * crit or 0
 
   return soulCleaveHeal, soulCarverHeal
 end
@@ -136,7 +180,7 @@ end
 -------------------------------------------------------------------------------
 
 -- event based trigger function:
--- UNIT_HEALTH_FREQUENT, UNIT_AURA, SPELL_UPDATE_USABLE, COMBAT_LOG_EVENT_UNFILTERED
+-- UNIT_HEALTH_FREQUENT, UNIT_AURA, SPELL_UPDATE_USABLE, COMBAT_LOG_EVENT_UNFILTERED, UNIT_ABSORB_AMOUNT_CHANGED
 function(e,id)
   local p = "player"
   if id == p then
