@@ -83,8 +83,8 @@ WeakAuras.VB.Absorbs = 0
 -- first slot: availability
 -- second slot: continuation upon availability change
 local spellAvailability = {
-  ["Soul Carver"] = {true, SoulCarverPrediction}
-  ["Immolation Aura"] = {true, ImmolationAuraPrediction)
+  ["Soul Carver"] = {true, SoulCarverPrediction},
+  ["Immolation Aura"] = {true, ImmolationAuraPrediction}
 }
 
 -- bar values
@@ -99,6 +99,7 @@ local health, healthMax = 0, 0
 local power, powerMax = 0, 0
 local absorbs = 0
 --------------------------------------------------------------------------------
+
 
 
 ------------------------ needfull things ---------------------------------------
@@ -122,7 +123,7 @@ local handlers = {
   ["PLAYER_ENTERING_WORLD"] = UpdateArtifactTraits,
   ["UNIT_AURA"] = function(_,id) if id == "player" then SoulCleavePrediction() ImmolationAuraGain() MetamorphosisGain() BladeTurningGain() end end,
   ["UNIT_ABSORB_AMOUNT_CHANGED"] = UpdateAbsorbs,
-  ["UNIT_HEALTH_FREQUENT"] = UpdateHealth
+  ["UNIT_HEALTH_FREQUENT"] = UpdateHealth,
   ["UNIT_POWER_FREQUENT"] = function() UpdatePower() SoulCleavePrediction() FeastOfSoulsPrediction() end
 }
 
@@ -138,7 +139,7 @@ local function GetCrit()
 end
 
 -- invokes the proper event handlers for the given event
-function aura_env.EventHandlerDispatcher(e,...)
+function EventHandlerDispatcher(s,e,...)
   handlers[e](e,...)
 end
 
@@ -186,7 +187,7 @@ local function DispatchOnSpellAvailability(e,...)
         spellAvailability[spell][1] = true
         spellAvailability[spell][2](spell, true)
       end
-    elseif e == "COMBAT_LOG_EVENT_UNFILTERED"
+    elseif e == "COMBAT_LOG_EVENT_UNFILTERED" then
       if select(2,...) == "SPELL_CAST_SUCCESS" and select(4,...) == UnitGUID(p) and select(13,...) == spell then
         spellAvailability[spell][1] = false
         spellAvailability[spell][2](spell, false)
@@ -278,5 +279,17 @@ local function GetHeal(spell,regex)
   local h1,h2 = GetSpellDescription(select(7,GetSpellInfo(spell))):match(regex or "(%d+),(%d+)")
   return tonumber(h1..h2)
 end
+
+
+
+---------------------- frame and event registering ----------------------------
+aura_env.frame = CreateFrame("Frame")
+aura_env.frame:SetScript("OnEvent", EventHandlerDispatcher)
+
+for k,_ in pairs(handlers) do
+  aura_env.frame:RegisterEvent(k)
+end
+
+-------------------------------------------------------------------------------
 
 -- UNIT_HEALTH_FREQUENT, UNIT_AURA, SPELL_UPDATE_USABLE, COMBAT_LOG_EVENT_UNFILTERED, UNIT_ABSORB_AMOUNT_CHANGED
