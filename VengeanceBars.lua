@@ -7,6 +7,9 @@
 
 ----------------------- configure stuff here ----------------------------------
 
+-- shortcuts
+local p = "player"
+
 local features = {
   -- health prediction
   ["hp"] = {
@@ -63,18 +66,41 @@ local feast_of_souls_talented = false
 ----------------------- WeakAuras globals -------------------------------------
 WeakAuras.VB = {}
 
-WeakAuras.VB.SoulCleavePrediction = 0
-WeakAuras.VB.SoulCarverPrediction = 0
-WeakAuras.VB.FeastOfSoulsPrediction = 0
-WeakAuras.VB.FeastOfSoulsGain = 0
+WeakAuras.VB.SoulCleavePrediction = {current = 0, max = 0}
+WeakAuras.VB.SoulCarverPrediction = {current = 0, max = 0}
+WeakAuras.VB.FeastOfSoulsPrediction = {current = 0, max = 0}
+WeakAuras.VB.FeastOfSoulsGain = {current = 0, max = 0}
 
-WeakAuras.VB.ImmolationAuraPrediction = 0
-WeakAuras.VB.ImmolationAuraGain = 0
-WeakAuras.VB.MetamorphosisGain = 0
-WeakAuras.VB.BladeTurningGain = 0
+WeakAuras.VB.ImmolationAuraPrediction = {current = 0, max = 0}
+WeakAuras.VB.ImmolationAuraGain = {current = 0, max = 0}
+WeakAuras.VB.MetamorphosisGain = {current = 0, max = 0}
+WeakAuras.VB.BladeTurningGain = {current = 0, max = 0}
 
 WeakAuras.VB.Absorbs = 0
 -------------------------------------------------------------------------------
+
+
+-------------------------forward declarations ---------------------------------
+local UpdatePower
+local UpdateHealth
+local UpdateTalents
+local UpdateAbsorbs
+local UpdateArtifactTraits
+local UpdateGain
+local FeastOfSoulsPrediction
+local FeastOfSoulsGain
+local SoulCleavePrediction
+local SoulCleaveGain
+local SoulCarverPrediction
+local ImmolationAuraPrediction
+local ImmolationAuraGain
+local MetamorphosisGain
+local BladeTurningGain
+local GetAP
+local GetCrit
+local GetHeal
+local EventHandlerDispatcher
+
 
 
 
@@ -83,21 +109,33 @@ WeakAuras.VB.Absorbs = 0
 -- first slot: availability
 -- second slot: continuation upon availability change
 local spellAvailability = {
-  ["Soul Carver"] = {true, SoulCarverPrediction},
-  ["Immolation Aura"] = {true, ImmolationAuraPrediction}
+  ["Soul Carver"] = {available = true, continuation = SoulCarverPrediction},
+  ["Immolation Aura"] = {available = true, continuation = ImmolationAuraPrediction}
 }
 
 -- bar values
 local values = {
-  ["hp"] = {},
-  ["hg"] = {},
-  ["pp"] = {},
-  ["pg"] = {}
+  ["hp"] = {
+    ["Feast of Souls"] = 0,
+    ["Soul Cleave"] = 0,
+    ["Soul Carver"] = 0
+  },
+  ["hg"] = {
+    ["Feast of Souls"] = 0
+  },
+  ["pp"] = {
+    ["Immolation Aura"] = 0,
+  },
+  ["pg"] = {
+    ["Immolation Aura"] = 0,
+    ["Metamorphosis"] = 0,
+    ["Blade Turning"] = 0
+  }
 }
 
-local health, healthMax = 0, 0
-local power, powerMax = 0, 0
-local absorbs = 0
+local health, healthMax = UnitHealth(p),UnitHealthMax(p)
+local power, powerMax = UnitPower(p),UnitPowerMax(p)
+local absorbs = UnitGetTotalAbsorbs(p)
 --------------------------------------------------------------------------------
 
 
@@ -110,9 +148,6 @@ local UnitHealth, UnitHealthMax = UnitHealth, UnitHealthMax
 local GetSpellCooldown, GetSpellDescription = GetSpellCooldown, GetSpellDescription
 local UnitAttackPower, GetCritChance = UnitAttackPower, GetCritChance
 local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
-
--- shortcuts
-local p = "player"
 -------------------------------------------------------------------------------
 
 local handlers = {
@@ -123,27 +158,27 @@ local handlers = {
   ["PLAYER_ENTERING_WORLD"] = UpdateArtifactTraits,
   ["UNIT_AURA"] = function(_,id) if id == "player" then SoulCleavePrediction() ImmolationAuraGain() MetamorphosisGain() BladeTurningGain() end end,
   ["UNIT_ABSORB_AMOUNT_CHANGED"] = UpdateAbsorbs,
-  ["UNIT_HEALTH_FREQUENT"] = UpdateHealth,
+  ["UNIT_HEALTH_FREQUENT"] = function() UpdateHealth() end,
   ["UNIT_POWER_FREQUENT"] = function() UpdatePower() SoulCleavePrediction() FeastOfSoulsPrediction() end
 }
 
 ----------------------- functions for calculating things ----------------------
 
-local function GetAP()
+GetAP = function()
   local b,p,n = UnitAttackPower(p)
   return b + p + n
 end
 
-local function GetCrit()
+ GetCrit = function()
   return crit_enabled and (GetCritChance() / 100) + 1 or 1
 end
 
 -- invokes the proper event handlers for the given event
-function EventHandlerDispatcher(s,e,...)
+EventHandlerDispatcher = function(s,e,...)
   handlers[e](e,...)
 end
 
-local function UpdateArtifactTraits()
+UpdateArtifactTraits = function()
   -- code by Rainrider from Wowinterface forums
   local u,e,a=UIParent,"ARTIFACT_UPDATE",C_ArtifactUI
    u:UnregisterEvent(e)
@@ -155,60 +190,62 @@ local function UpdateArtifactTraits()
    u:RegisterEvent(e)
 end
 
-local function UpdateTalents()
+UpdateTalents = function()
   feast_of_souls_talented = select(2, GetTalentTierInfo(feast_of_souls_location.row, feast_of_souls_location.column )) == 1
 end
 
 
-local function UpdateAbsorbs()
+UpdateAbsorbs = function()
   absorbs = UnitGetTotalAbsorbs(p)
-
-  WeakAuras.VB.Absorbs = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"] + values["hp"]["Feast of Souls"] + values["hp"]["Soul Carver"] + absorbs
+    WeakAuras.VB.Absorbs.current = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"] + values["hp"]["Feast of Souls"] + values["hp"]["Soul Carver"] + absorbs
+      WeakAuras.VB.Absorbs.max = healthMax * 2
 end
 
 
-local function UpdatePower()
+UpdatePower = function()
   power = UnitPower(p)
   powerMax = UnitPowerMax(p)
 end
 
 
-local function UpdateHealth()
+UpdateHealth = function()
+  print("health updated")
   health = UnitHealth(p)
   healthMax = UnitHealthMax(p)
 end
 
 
-local function DispatchOnSpellAvailability(e,...)
+DispatchOnSpellAvailability = function(e,...)
   for _,spell in pairs{"Immolation Aura", "Soul Carver"} do
     if e == "SPELL_UPDATE_USABLE" then
       local s = GetSpellCooldown(spell)
-      if s and s == 0 and not spellAvailability[spell] then
-        spellAvailability[spell][1] = true
-        spellAvailability[spell][2](spell, true)
+      if s and s == 0 and not spellAvailability[spell].available then
+        spellAvailability[spell].available = true
+        spellAvailability[spell].continuation()
       end
     elseif e == "COMBAT_LOG_EVENT_UNFILTERED" then
       if select(2,...) == "SPELL_CAST_SUCCESS" and select(4,...) == UnitGUID(p) and select(13,...) == spell then
-        spellAvailability[spell][1] = false
-        spellAvailability[spell][2](spell, false)
+        spellAvailability[spell].available = false
+        spellAvailability[spell].continuation()
       end
     end
   end
 end
 
 
-local function FeastOfSoulsPrediction()
+FeastOfSoulsPrediction = function()
   values["hp"]["Feast of Souls"] = (not features["hp"]["Feast of Souls"] or
     not feast_of_souls_talented or
     (not features["ignore cost"] and power < soul_cleave_min_cost)) and 0 or
     GetHeal("Feast of Souls")
-
-    WeakAuras.VB.FeastOfSoulsPrediction = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"] + values["hp"]["Feast of Souls"]
+    WeakAuras.VB.FeastOfSoulsPrediction.current = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"] + values["hp"]["Feast of Souls"]
+    WeakAuras.VB.FeastOfSoulsPrediction.max = healthMax
 end
 
 
-local function SoulCleavePrediction()
-  if not features["hp"]["Soul Cleaver"] or (not features["ignore cost"] and power < soul_cleave_min_cost) then
+SoulCleavePrediction = function()
+  if not features["hp"]["Soul Cleave"] or (not features["ignore cost"] and power < soul_cleave_min_cost) then
+
     values["hp"]["Soul Cleave"] = 0
   else
     local soulFragmentHeal = GetHeal("Shear") * GetSpellCount("Soul Cleave")
@@ -216,28 +253,28 @@ local function SoulCleavePrediction()
     local soulCleaveMinHeal = soul_cleave_formula(GetAP())
     values["hp"]["Soul Cleave"] = (soulCleaveMinHeal * (power / soul_cleave_max_cost) * 2 * devour_souls_scalar + soulFragmentHeal) * GetCrit()
   end
-
-    WeakAuras.VB.SoulCleavePrediction = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"]
+  WeakAuras.VB.SoulCleavePrediction.current = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"]
+  WeakAuras.VB.SoulCleavePrediction.max = healthMax
 end
 
 
-local function SoulCarverPrediction()
-  values["hp"]["Soul Carver"] = (not features["hp"]["Soul Carver"] or not soul_carver_unlocked or not spellAvailability["Soul Carver"][1]) and 0 or
+SoulCarverPrediction = function()
+  values["hp"]["Soul Carver"] = (not features["hp"]["Soul Carver"] or not soul_carver_unlocked or not spellAvailability["Soul Carver"].available) and 0 or
   soul_carver_soul_fragment_count * GetHeal("Shear") * GetCrit()
-
-  WeakAuras.VB.SoulCarverPrediction = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"] + values["hp"]["Feast of Souls"] + values["hp"]["Soul Carver"]
+  WeakAuras.VB.SoulCarverPrediction.current = health + values["hg"]["Feast of Souls"] + values["hp"]["Soul Cleave"] + values["hp"]["Feast of Souls"] + values["hp"]["Soul Carver"]
+  WeakAuras.VB.SoulCarverPrediction.max = healthMax
 end
 
 
 
-local function ImmolationAuraPrediction()
-  values["pp"]["Immolation Aura"] = (not features["pp"]["Immolation Aura"] or not spellAvailability["Immolation Aura"][1]) and 0 or immolation_aura_pain_gain
-
-  WeakAuras.VB.ImmolationAuraPrediction = power + values["pg"]["Immolation Aura"] + values["pg"]["Metamorphosis"] + values["pp"]["Immolation Aura"]
+ImmolationAuraPrediction = function()
+  values["pp"]["Immolation Aura"] = (not features["pp"]["Immolation Aura"] or not spellAvailability["Immolation Aura"].available) and 0 or immolation_aura_pain_gain
+  WeakAuras.VB.ImmolationAuraPrediction.current = power + values["pg"]["Immolation Aura"] + values["pg"]["Metamorphosis"] + values["pp"]["Immolation Aura"]
+  WeakAuras.VB.ImmolationAuraPrediction.max = powerMax
 end
 
 
-local function UpdateGain(type, spell, total, talanted)
+UpdateGain = function(type, spell, total, talanted)
   if features[type][spell] and (talented == nil or talented) and total ~= 0 then
     local buffed,_,_,_,_,duration,expirationTime = UnitBuff(p, spell)
     values[type][spell] = buffed and (expirationTime - GetTime()) / duration * total or 0
@@ -247,35 +284,35 @@ local function UpdateGain(type, spell, total, talanted)
 end
 
 
-local function ImmolationAuraGain()
+ImmolationAuraGain = function()
   UpdateGain("pg", "Immolation Aura", immolation_aura_pain_gain)
-
-  WeakAuras.VB.ImmolationAuraGain = power + values["pg"]["Immolation Aura"]
+  WeakAuras.VB.ImmolationAuraGain.current = power + values["pg"]["Immolation Aura"]
+  WeakAuras.VB.ImmolationAuraGain.max = powerMax
 end
 
 
-local function MetamorphosisGain()
+MetamorphosisGain = function()
   UpdateGain("pg", "Metamorphosis", GetSpellCooldown("Metamorphosis") == 0 and metamorphosis_pain_gain or fueled_by_pain_gain)
-
-  WeakAuras.VB.MetamorphosisGain = power + values["pg"]["Immolation Aura"] + values["pg"]["Metamorphosis"]
+  WeakAuras.VB.MetamorphosisGain.current = power + values["pg"]["Immolation Aura"] + values["pg"]["Metamorphosis"]
+  WeakAuras.VB.MetamorphosisGain.max = powerMax
 end
 
 
-local function FeastOfSoulsGain()
+FeastOfSoulsGain = function()
     UpdateGain("hg", "Feast of Souls", GetHeal("Feast of Souls"), feast_of_souls_talented)
-
-      WeakAuras.VB.FeastOfSoulsGain = health + values["hg"]["Feast of Souls"]
+    WeakAuras.VB.FeastOfSoulsGain.current = health + values["hg"]["Feast of Souls"]
+    WeakAuras.VB.FeastOfSoulsGain.max = healthMax
 end
 
 
-local function BladeTurningGain()
+BladeTurningGain = function()
   UpdateGain("pg", "Blade Turning", blade_turning_gain)
-
-  WeakAuras.VB.BladeTurningGain = power + values["pg"]["Blade Turning"]
+  WeakAuras.VB.BladeTurningGain.current = power + values["pg"]["Blade Turning"]
+  WeakAuras.VB.BladeTurningGain.max = powerMax
 end
 
 
-local function GetHeal(spell,regex)
+GetHeal = function(spell,regex)
   local h1,h2 = GetSpellDescription(select(7,GetSpellInfo(spell))):match(regex or "(%d+),(%d+)")
   return tonumber(h1..h2)
 end
@@ -283,13 +320,26 @@ end
 
 
 ---------------------- frame and event registering ----------------------------
-aura_env.frame = CreateFrame("Frame")
-aura_env.frame:SetScript("OnEvent", EventHandlerDispatcher)
+local frame = CreateFrame("Frame", "VengeanceBarsFrame", UIParent)
+frame:SetScript("OnEvent", EventHandlerDispatcher)
 
 for k,_ in pairs(handlers) do
-  aura_env.frame:RegisterEvent(k)
+  frame:RegisterEvent(k)
 end
+
+-- local background = CreateFrame("Frame",nil,UIParent)
+-- background:SetHeight(20)
+-- background:SetWidth(200)
+-- background:SetFrameStrata("BACKGROUND")
+--
+-- local backgroundTexture = background:CreateTexture(nil, "BACKGROUND")
+-- backgroundTexture:SetTexture("Interface\\AddOns\\VengeanceBars\\media\\texture.tga")
+-- backgroundTexture:SetAllPoints(background)
+-- background.texture = backgroundTexture
+--
+-- background:SetPoint("CENTER", 0, 0)
+-- background:Show()
 
 -------------------------------------------------------------------------------
 
--- UNIT_HEALTH_FREQUENT, UNIT_AURA, SPELL_UPDATE_USABLE, COMBAT_LOG_EVENT_UNFILTERED, UNIT_ABSORB_AMOUNT_CHANGED
+-- UNIT_HEALTH_FREQUENT, UNIT_POWER_FREQUENT, UNIT_AURA, SPELL_UPDATE_USABLE, COMBAT_LOG_EVENT_UNFILTERED, UNIT_ABSORB_AMOUNT_CHANGED
